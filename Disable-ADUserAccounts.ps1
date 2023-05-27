@@ -8,19 +8,22 @@
 # This script is released under the Apache License, Version 2.0
 # For more information, see the file LICENSE.txt in the root directory of this repository
 
-# Set variables for input CSV file and target OU paths
-$csvFilePath = "C:\path\to\input\file.csv"
-$targetOUPath = "OU=Disabled Users,OU=Transit,OU=Departments,DC=domain,DC=com"
-$logFilePath = "\\server\share\Logs\$(Get-Date -Format 'yyyyMMdd').txt"
+# Prompt user for CSV file path
+$csvFilePath = Read-Host "Enter path to CSV file containing email addresses (no header)"
+
+# Target OU Path
+$targetOUPath = "OU=Disabled Users,OU=Users,OU=Organization,DC=<domain>,DC=<internal>"
 
 # Import the CSV file and loop through each email address
 Import-Csv $csvFilePath -Header EmailAddress | ForEach-Object {
 
     # Get the user from Active Directory
-    $user = Get-ADUser -Filter "EmailAddress -eq '$($_.EmailAddress)'" -Properties Enabled, GivenName, Surname, DistinguishedName
+    $user = Get-ADUser -Filter "EmailAddress -eq '$($_.EmailAddress)'" -Properties Enabled, GivenName, Surname, DistinguishedName, UserPrincipalName
 
     # Get the SamAccountName from the user's email address
-    $samAccountName = $user.UserPrincipalName.Split("@")[0]
+    $samAccountName = $user.UserPrincipalName.Split("@")[0].ToLower()
+
+    $logFilePath = "\<fileservername>\Logs\$($user.SamAccountName.ToLower())-disabled-$(Get-Date -Format 'yyyy-MM-dd').txt"
 
     # If the user account is enabled, disable it
     if ($user.Enabled) {
@@ -34,16 +37,16 @@ Import-Csv $csvFilePath -Header EmailAddress | ForEach-Object {
         }
     }
     else {
-        Write-Host "User account '$samAccountName' is already disabled"
+        Write-Output "User account '$samAccountName' is already disabled"
     }
 
     # Move the user account to the target OU
-    Write-Host "Moving user account '$samAccountName' from '$($user.DistinguishedName)' to '$targetOUPath'"
+    Write-Output "Moving user account '$samAccountName' from '$($user.DistinguishedName)' to '$targetOUPath'"
     $moveResult = Move-ADObject -Identity $user.DistinguishedName -TargetPath $targetOUPath -Verbose -ErrorAction SilentlyContinue
     if ($moveResult) {
         Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [ERROR] Failed to move user account '$samAccountName' with error code '$($moveResult.Exception.ErrorCode)'." | Out-File $logFilePath -Append
     }
     else {
-        Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [SUCCESS] User account '$samAccountName' was moved to '$targetOUPath'." | Out-File $logFilePath -Append
+    Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [SUCCESS] User account '$samAccountName' was moved to '$targetOUPath'." | Out-File $logFilePath -Append
     }
 }
